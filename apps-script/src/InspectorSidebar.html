@@ -1,0 +1,40 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <base target="_top">
+  <style>
+    body { font-family: Arial, sans-serif; font-size: 12px; margin: 8px; }
+    .filter { margin-bottom: 8px; }
+    .card { border: 1px solid #ccc; padding: 8px; margin-bottom: 8px; border-radius: 4px; }
+    pre { white-space: pre-wrap; word-break: break-all; font-size: 10px; max-height: 120px; overflow: auto; }
+  </style>
+</head>
+<body>
+  <div class="filter">
+    <label><input type="checkbox" id="fSmartsheet" checked> Smartsheet</label>
+    <label><input type="checkbox" id="fSalesforce" checked> Salesforce</label>
+  </div>
+  <div id="list">Loading…</div>
+  <script>
+    function render(rows) {
+      var showS = document.getElementById('fSmartsheet').checked;
+      var showF = document.getElementById('fSalesforce').checked;
+      var html = '';
+      rows.forEach(function(r) {
+        var sys = r[3];
+        if (sys === 'Smartsheet' && !showS) return;
+        if (sys === 'Salesforce' && !showF) return;
+        html += '<div class="card"><strong>' + sys + '</strong> ' + r[4] + ' ' + r[5] + '<br>' + r[6] +
+          '<pre>' + r[7] + '</pre></div>';
+      });
+      document.getElementById('list').innerHTML = html || 'No calls captured.';
+    }
+    function load() {
+      google.script.run.withSuccessHandler(render).getInspectorRows();
+    }
+    document.getElementById('fSmartsheet').addEventListener('change', load);
+    document.getElementById('fSalesforce').addEventListener('change', load);
+    load();
+  </script>
+</body>
+</html>
