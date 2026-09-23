@@ -6,6 +6,14 @@ function chooseClients(testMode, harness, liveOrFactory) {
   return liveOrFactory;
 }
 
+function resolveImportRunner(testMode, harnessRunner, liveRunner) {
+  return testMode ? harnessRunner : liveRunner;
+}
+
+function resolveCreateRRRunner(testMode, harnessRunner, liveRunner) {
+  return testMode ? harnessRunner : liveRunner;
+}
+
 function dailyTriggerAllowed(testMode) {
   return !testMode;
 }
@@ -108,15 +116,34 @@ function onImportProject() {
   var ui = SpreadsheetApp.getUi();
   var resp = ui.prompt('Import project', 'Enter Certinia Project ID:', ui.ButtonSet.OK_CANCEL);
   if (resp.getSelectedButton() !== ui.Button.OK) return;
-  runHarnessImport(resp.getResponseText(), false);
+  var projectId = resp.getResponseText();
+  var testMode = getTestMode();
+  var runner = resolveImportRunner(
+    testMode,
+    function () { runHarnessImport(projectId, false); },
+    function () { runLiveImport(projectId, false); }
+  );
+  runner();
 }
 
 function onCreateResourceRequestsDryRun() {
-  runHarnessCreateRR(true);
+  var testMode = getTestMode();
+  var runner = resolveCreateRRRunner(
+    testMode,
+    function () { runHarnessCreateRR(true); },
+    function () { runLiveCreateRR(true); }
+  );
+  runner();
 }
 
 function onCreateResourceRequests() {
-  runHarnessCreateRR(false);
+  var testMode = getTestMode();
+  var runner = resolveCreateRRRunner(
+    testMode,
+    function () { runHarnessCreateRR(false); },
+    function () { runLiveCreateRR(false); }
+  );
+  runner();
 }
 
 function onImportDummyData() {
@@ -139,6 +166,8 @@ function getInspectorRows() {
 if (typeof module !== 'undefined') {
   module.exports = {
     chooseClients: chooseClients,
+    resolveImportRunner: resolveImportRunner,
+    resolveCreateRRRunner: resolveCreateRRRunner,
     dailyTriggerAllowed: dailyTriggerAllowed,
     assertNoLiveFetch: assertNoLiveFetch,
     getTestMode: getTestMode,

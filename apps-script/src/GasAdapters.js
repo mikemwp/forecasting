@@ -1,45 +1,95 @@
+var Config = typeof require !== 'undefined' ? require('./Config').Config : Config;
+var flushInspectorFn = typeof require !== 'undefined' ? require('./SheetIO').flushInspectorToWorkbook : flushInspectorToWorkbook;
+var createSpreadsheetWorkbookFn = typeof require !== 'undefined' ? require('./SheetIO').createSpreadsheetWorkbook : createSpreadsheetWorkbook;
+var seedModule = typeof require !== 'undefined' ? require('./CalendarSeed') : { seedRowToSheet: seedRowToSheet, SEED_HEADERS: SEED_HEADERS };
+var importProjectFn = typeof require !== 'undefined' ? require('./ImportProject').importProject : importProject;
+var createResourceRequestsFn = typeof require !== 'undefined' ? require('./CreateResourceRequests').createResourceRequests : createResourceRequests;
+
+var STAFFING_HEADERS = [
+  'Project ID', 'Company Name', 'Total purchased hours', 'Milestone', 'Milestone hours',
+  'Resource type', 'Request hours', 'Confirmed', 'Certinia Resource Request Id'
+];
+
 function createGasWorkbook() {
-  return {
-    _ss: SpreadsheetApp.getActiveSpreadsheet(),
-    getTab: function (name) {
-      var sheet = this._ss.getSheetByName(name);
-      if (!sheet) return { headers: [], rows: [] };
-      var data = sheet.getDataRange().getValues();
-      if (!data.length) return { headers: [], rows: [] };
-      return { headers: data[0], rows: data.slice(1) };
-    },
-    ensureTab: function (name, headers) {
-      var sheet = this._ss.getSheetByName(name);
-      if (!sheet) sheet = this._ss.insertSheet(name);
-      if (headers && headers.length && sheet.getLastRow() === 0) {
-        sheet.getRange(1, 1, 1, headers.length).setValues([headers]);
+  return createSpreadsheetWorkbookFn(SpreadsheetApp.getActiveSpreadsheet());
+}
+
+function persistStaffingRRIds(wb, staffingRows) {
+  var tab = wb.getTab(Config.tabs.staffing);
+  var pidIdx = tab.headers.indexOf('Project ID');
+  var mIdx = tab.headers.indexOf('Milestone');
+  var rrIdx = tab.headers.indexOf('Certinia Resource Request Id');
+  if (pidIdx < 0 || mIdx < 0 || rrIdx < 0) return;
+  var changed = false;
+  staffingRows.forEach(function (r) {
+    var rrId = r.certiniaResourceRequestId || r['Certinia Resource Request Id'];
+    if (!rrId) return;
+    var projectId = r.projectId || r['Project ID'];
+    var milestone = r.milestone || r['Milestone'];
+    for (var i = 0; i < tab.rows.length; i++) {
+      if (tab.rows[i][pidIdx] === projectId && tab.rows[i][mIdx] === milestone) {
+        tab.rows[i][rrIdx] = rrId;
+        changed = true;
+        return;
       }
-      return sheet;
-    },
-    writeRow: function (tabName, values) {
-      var sheet = this.ensureTab(tabName, []);
-      sheet.appendRow(values);
-    },
-    readRows: function (tabName) {
-      var tab = this.getTab(tabName);
-      return tab.rows.map(function (row) {
-        var obj = {};
-        for (var i = 0; i < tab.headers.length; i++) obj[tab.headers[i]] = row[i];
-        return obj;
-      });
-    },
-    readObjects: function (tabName, keyField) {
-      var rows = this.readRows(tabName);
-      var out = {};
-      rows.forEach(function (r) { if (r[keyField]) out[r[keyField]] = r; });
-      return out;
-    },
-    upsertByKey: function () {},
-    overwriteTab: function () {},
-    getColumnValues: function (tabName, col) {
-      return this.readRows(tabName).map(function (r) { return r[col]; }).filter(Boolean);
     }
-  };
+  });
+  if (changed) wb.overwriteTab(Config.tabs.staffing, tab.headers, tab.rows);
+}
+
+function persistSeedGoogleEventIds(wb, seedRows) {
+  var headers = seedModule.SEED_HEADERS;
+  wb.ensureTab(Config.tabs.calendarSeed, headers);
+  var tab = wb.getTab(Config.tabs.calendarSeed);
+  var idIdx = tab.headers.indexOf('Google Event ID');
+  if (idIdx < 0) {
+    tab.headers.push('Google Event ID');
+    idIdx = tab.headers.length - 1;
+  }
+  seedRows.forEach(function (row, i) {
+    if (!row.googleEventId) return;
+    if (tab.rows[i]) {
+      while (tab.rows[i].length <= idIdx) tab.rows[i].push('');
+      tab.rows[i][idIdx] = row.googleEventId;
+    }
+  });
+  wb.overwriteTab(Config.tabs.calendarSeed, tab.headers, tab.rows);
+}
+
+function runImportWithFlush(wb, inspector, salesforce, projectId, dryRun) {
+  importProjectFn({
+    projectId: projectId,
+    salesforce: salesforce,
+    lookup: wb.readRows(Config.tabs.lookup),
+    staffingTab: Config.tabs.staffing,
+    workbook: wb,
+    inspector: inspector,
+    dryRun: dryRun
+  });
+  flushInspectorFn(wb, inspector);
+}
+
+function runCreateRRWithFlush(wb, inspector, salesforce, dryRun) {
+  var rows = wb.readRows(Config.tabs.staffing).map(function (r) {
+    return {
+      projectId: r['Project ID'],
+      milestone: r['Milestone'],
+      milestoneHours: r['Milestone hours'],
+      resourceType: r['Resource type'],
+      requestHours: r['Request hours'],
+      confirmed: r['Confirmed'],
+      certiniaResourceRequestId: r['Certinia Resource Request Id']
+    };
+  });
+  createResourceRequestsFn({
+    staffingRows: rows,
+    salesforce: salesforce,
+    inspector: inspector,
+    dryRun: dryRun,
+    errorLog: { append: function (e) { wb.writeRow(Config.tabs.errorLog, [e.timestamp, e.job, '', e.projectId, e.reason, e.snippet]); } }
+  });
+  if (!dryRun) persistStaffingRRIds(wb, rows);
+  flushInspectorFn(wb, inspector);
 }
 
 function fetchCalendarEventsAdvanced(calendarIds, timeMin, timeMax) {
@@ -128,39 +178,42 @@ function runHarnessImport(projectId, dryRun) {
   var wb = createGasWorkbook();
   var inspector = createInspector();
   var salesforce = new HarnessSalesforceClient({ workbook: wb, inspector: inspector, job: 'Import', dryRun: dryRun });
-  importProject({
-    projectId: projectId,
-    salesforce: salesforce,
-    lookup: wb.readRows(Config.tabs.lookup),
-    staffingTab: Config.tabs.staffing,
-    workbook: wb,
-    inspector: inspector,
-    dryRun: dryRun
-  });
+  runImportWithFlush(wb, inspector, salesforce, projectId, dryRun);
 }
 
 function runHarnessCreateRR(dryRun) {
   var wb = createGasWorkbook();
   var inspector = createInspector();
   var salesforce = new HarnessSalesforceClient({ workbook: wb, inspector: inspector, job: 'CreateRR', dryRun: dryRun });
-  var rows = wb.readRows(Config.tabs.staffing).map(function (r) {
-    return {
-      projectId: r['Project ID'],
-      milestone: r['Milestone'],
-      milestoneHours: r['Milestone hours'],
-      resourceType: r['Resource type'],
-      requestHours: r['Request hours'],
-      confirmed: r['Confirmed'],
-      certiniaResourceRequestId: r['Certinia Resource Request Id']
-    };
-  });
-  createResourceRequests({
-    staffingRows: rows,
-    salesforce: salesforce,
+  runCreateRRWithFlush(wb, inspector, salesforce, dryRun);
+}
+
+function runLiveImport(projectId, dryRun) {
+  var wb = createGasWorkbook();
+  var inspector = createInspector();
+  var props = PropertiesService.getScriptProperties();
+  var salesforce = new LiveSalesforceClient({
+    accessToken: props.getProperty('SF_ACCESS_TOKEN'),
+    instanceUrl: props.getProperty('SF_INSTANCE_URL'),
     inspector: inspector,
-    dryRun: dryRun,
-    errorLog: { append: function (e) { wb.writeRow(Config.tabs.errorLog, [e.timestamp, e.job, '', e.projectId, e.reason, e.snippet]); } }
+    job: 'Import',
+    dryRun: dryRun
   });
+  runImportWithFlush(wb, inspector, salesforce, projectId, dryRun);
+}
+
+function runLiveCreateRR(dryRun) {
+  var wb = createGasWorkbook();
+  var inspector = createInspector();
+  var props = PropertiesService.getScriptProperties();
+  var salesforce = new LiveSalesforceClient({
+    accessToken: props.getProperty('SF_ACCESS_TOKEN'),
+    instanceUrl: props.getProperty('SF_INSTANCE_URL'),
+    inspector: inspector,
+    job: 'CreateRR',
+    dryRun: dryRun
+  });
+  runCreateRRWithFlush(wb, inspector, salesforce, dryRun);
 }
 
 function importDummyDataGas() {
@@ -240,5 +293,16 @@ function importSeedCalendarEventsGas() {
     }
   };
   var result = importSeedEvents(rows, api, calIds[0].trim());
+  persistSeedGoogleEventIds(wb, rows);
   SpreadsheetApp.getActiveSpreadsheet().toast('Created ' + result.created + ', skipped ' + result.skipped);
+}
+
+if (typeof module !== 'undefined') {
+  module.exports = {
+    flushInspectorToWorkbook: flushInspectorFn,
+    persistSeedGoogleEventIds: persistSeedGoogleEventIds,
+    runImportWithFlush: runImportWithFlush,
+    runCreateRRWithFlush: runCreateRRWithFlush,
+    persistStaffingRRIds: persistStaffingRRIds
+  };
 }

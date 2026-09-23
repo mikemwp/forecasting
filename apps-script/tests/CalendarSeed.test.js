@@ -57,3 +57,14 @@ test('edited From/To on the row are what get sent', () => {
   const payload = buildCalendarInsert(row);
   expect(payload.attendees[0].email).toBe('consultant@co.com');
 });
+
+test('two Build meetings share the same weekStart Monday', () => {
+  const { weekStart } = require('../src/Week');
+  const now = new Date('2026-09-22T14:00:00+01:00');
+  const rows = defaultSeedRows(now);
+  const build = rows.filter(function (r) { return r.milestone === 'Build'; });
+  expect(build).toHaveLength(2);
+  const ws0 = weekStart(new Date(build[0].start), 'Monday');
+  const ws1 = weekStart(new Date(build[1].start), 'Monday');
+  expect(ws0.getTime()).toBe(ws1.getTime());
+});

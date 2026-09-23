@@ -42,11 +42,31 @@ function nextWeekdayTen(now) {
   return d;
 }
 
+var weekStartFn = typeof require !== 'undefined' ? require('./Week').weekStart : weekStart;
+
 function defaultSeedRows(now) {
   var start0 = nextWeekdayTen(now);
+  var prevStart = start0;
+  var buildPlanningStart = null;
   return SEED_MILESTONES.map(function (m, i) {
-    var start = i === 0 ? start0 : addWorkingDays(start0, i);
+    var start;
+    if (i === 0) {
+      start = new Date(start0.getTime());
+    } else if (m.meeting === 'Build planning') {
+      start = addWorkingDays(prevStart, 1);
+      if (start.getDay() === 5) {
+        start = addWorkingDays(weekStartFn(start, 'Monday'), 7);
+      } else if (start.getDay() === 0 || start.getDay() === 6) {
+        start = weekStartFn(start, 'Monday');
+      }
+      buildPlanningStart = new Date(start.getTime());
+    } else if (m.meeting === 'Build review') {
+      start = addWorkingDays(buildPlanningStart, 1);
+    } else {
+      start = addWorkingDays(prevStart, 1);
+    }
     start.setHours(10, 0, 0, 0);
+    prevStart = start;
     return {
       calendarTitle: m.title,
       company: 'Acme Ltd',

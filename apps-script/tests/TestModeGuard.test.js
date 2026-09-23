@@ -1,4 +1,4 @@
-const { chooseClients, dailyTriggerAllowed, assertNoLiveFetch } = require('../src/Menu');
+const { chooseClients, dailyTriggerAllowed, assertNoLiveFetch, resolveImportRunner, resolveCreateRRRunner } = require('../src/Menu');
 
 test('chooseClients(true) returns harness', () => {
   var harness = { kind: 'harness' };
@@ -46,4 +46,52 @@ test('live factory throws if accidentally invoked under TEST_MODE path', () => {
     throw new Error('live factory should not run');
   };
   expect(chooseClients(true, harness, liveFactory)).toBe(harness);
+});
+
+test('resolveImportRunner uses harness when TEST_MODE true', () => {
+  var harnessCalled = false;
+  var liveCalled = false;
+  resolveImportRunner(
+    true,
+    function () { harnessCalled = true; },
+    function () { liveCalled = true; }
+  )();
+  expect(harnessCalled).toBe(true);
+  expect(liveCalled).toBe(false);
+});
+
+test('resolveImportRunner uses live when TEST_MODE false', () => {
+  var harnessCalled = false;
+  var liveCalled = false;
+  resolveImportRunner(
+    false,
+    function () { harnessCalled = true; },
+    function () { liveCalled = true; }
+  )();
+  expect(harnessCalled).toBe(false);
+  expect(liveCalled).toBe(true);
+});
+
+test('resolveCreateRRRunner uses harness when TEST_MODE true', () => {
+  var harnessCalled = false;
+  var liveCalled = false;
+  resolveCreateRRRunner(
+    true,
+    function () { harnessCalled = true; },
+    function () { liveCalled = true; }
+  )();
+  expect(harnessCalled).toBe(true);
+  expect(liveCalled).toBe(false);
+});
+
+test('resolveCreateRRRunner uses live when TEST_MODE false', () => {
+  var harnessCalled = false;
+  var liveCalled = false;
+  resolveCreateRRRunner(
+    false,
+    function () { harnessCalled = true; },
+    function () { liveCalled = true; }
+  )();
+  expect(harnessCalled).toBe(false);
+  expect(liveCalled).toBe(true);
 });

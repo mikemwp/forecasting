@@ -79,3 +79,35 @@ test('dryRun create records inspector only', () => {
   expect(inspector.calls[0].dryRun).toBe(true);
   expect(row.certiniaResourceRequestId).toBe('');
 });
+
+test('existing certiniaResourceRequestId triggers update not insert', () => {
+  var wb = new MemoryWorkbook();
+  var inspector = createInspector();
+  var salesforce = new HarnessSalesforceClient({ workbook: wb, inspector: inspector, job: 'CreateRR', dryRun: false });
+  createResourceRequests({
+    staffingRows: [staffingRow({ confirmed: true, certiniaResourceRequestId: 'rr_existing' })],
+    salesforce: salesforce,
+    inspector: inspector,
+    dryRun: false,
+    errorLog: { append: function () {} }
+  });
+  expect(inspector.calls.length).toBe(1);
+  expect(inspector.calls[0].method).toBe('PATCH');
+  expect(inspector.calls[0].path).toMatch(/rr_existing/);
+});
+
+test('rerun with same id still PATCHes not POST', () => {
+  var wb = new MemoryWorkbook();
+  var inspector = createInspector();
+  var salesforce = new HarnessSalesforceClient({ workbook: wb, inspector: inspector, job: 'CreateRR', dryRun: false });
+  var row = staffingRow({ confirmed: true, certiniaResourceRequestId: 'rr_existing' });
+  createResourceRequests({
+    staffingRows: [row],
+    salesforce: salesforce,
+    inspector: inspector,
+    dryRun: false,
+    errorLog: { append: function () {} }
+  });
+  expect(row.certiniaResourceRequestId).toBe('rr_existing');
+  expect(inspector.calls.every(function (c) { return c.method === 'PATCH'; })).toBe(true);
+});

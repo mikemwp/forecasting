@@ -20,3 +20,10 @@ test('second importDummyData does not duplicate companies or seed rows', () => {
   expect(wb.getTab(Config.tabs.companies).rows.length).toBe(1);
   expect(wb.getTab(Config.tabs.calendarSeed).rows.length).toBe(10);
 });
+
+test('importDummyData works when require is undefined (GAS seed fallback)', () => {
+  var bootstrapSrc = require('fs').readFileSync(require('path').join(__dirname, '../src/Bootstrap.js'), 'utf8');
+  expect(bootstrapSrc).toMatch(/typeof require !== 'undefined'\s*\?\s*require\('\.\/CalendarSeed'\)/);
+  expect(bootstrapSrc).toMatch(/defaultSeedRows/);
+  expect(bootstrapSrc).not.toMatch(/require\('\.\/CalendarSeed'\)\s*;\s*$/m);
+});

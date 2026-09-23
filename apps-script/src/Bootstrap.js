@@ -1,5 +1,7 @@
 var Config = typeof require !== 'undefined' ? require('./Config').Config : Config;
-var seed = typeof require !== 'undefined' ? require('./CalendarSeed') : null;
+var seed = typeof require !== 'undefined'
+  ? require('./CalendarSeed')
+  : { defaultSeedRows: defaultSeedRows, seedRowToSheet: seedRowToSheet, SEED_HEADERS: SEED_HEADERS };
 var renderForecastGridFn = typeof require !== 'undefined' ? require('./PlannerPreview').renderForecastGrid : renderForecastGrid;
 
 var INSPECTOR_HEADERS = [

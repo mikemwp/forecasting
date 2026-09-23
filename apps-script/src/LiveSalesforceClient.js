@@ -69,6 +69,27 @@ LiveSalesforceClient.prototype.createResourceRequests = function (rows) {
   var self = this;
   return rows.map(function (row, i) {
     var body = buildResourceRequestFn(row);
+    var existingId = row.certiniaResourceRequestId;
+    if (existingId) {
+      var patchPath = '/services/data/' + Config.SF_API_VERSION + '/sobjects/' + Config.objects.resourceRequest + '/' + existingId;
+      self.inspector.record({
+        job: self.job,
+        dryRun: self.dryRun,
+        system: 'Salesforce',
+        operation: 'sobjects/' + Config.objects.resourceRequest + ' PATCH',
+        method: 'PATCH',
+        path: patchPath,
+        request: body
+      });
+      if (!self.dryRun) {
+        self.urlFetch(self.instanceUrl + patchPath, {
+          method: 'patch',
+          headers: self._authHeaders(),
+          payload: JSON.stringify(body)
+        });
+      }
+      return existingId;
+    }
     self.inspector.record({
       job: self.job,
       dryRun: self.dryRun,

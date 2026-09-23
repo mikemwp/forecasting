@@ -178,16 +178,29 @@ HarnessSalesforceClient.prototype.createResourceRequests = function (rows) {
   var ids = [];
   rows.forEach(function (row, i) {
     var body = buildResourceRequest(row);
-    self._record(
-      'sobjects/' + Config.objects.resourceRequest,
-      'POST',
-      '/services/data/' + Config.SF_API_VERSION + '/sobjects/' + Config.objects.resourceRequest,
-      body,
-      row.milestone
-    );
-    var id = 'harness_rr_' + i;
-    ids.push(id);
-    if (!self.dryRun && row.onCreated) row.onCreated(id);
+    var existingId = row.certiniaResourceRequestId;
+    if (existingId) {
+      self._record(
+        'sobjects/' + Config.objects.resourceRequest + ' PATCH',
+        'PATCH',
+        '/services/data/' + Config.SF_API_VERSION + '/sobjects/' + Config.objects.resourceRequest + '/' + existingId,
+        body,
+        row.milestone
+      );
+      ids.push(existingId);
+      if (!self.dryRun && row.onCreated) row.onCreated(existingId);
+    } else {
+      self._record(
+        'sobjects/' + Config.objects.resourceRequest,
+        'POST',
+        '/services/data/' + Config.SF_API_VERSION + '/sobjects/' + Config.objects.resourceRequest,
+        body,
+        row.milestone
+      );
+      var id = 'harness_rr_' + i;
+      ids.push(id);
+      if (!self.dryRun && row.onCreated) row.onCreated(id);
+    }
   });
   return ids;
 };
