@@ -1,7 +1,15 @@
 var Config = typeof require !== 'undefined' ? require('./Config').Config : Config;
 var flushInspectorFn = typeof require !== 'undefined' ? require('./SheetIO').flushInspectorToWorkbook : flushInspectorToWorkbook;
 var createSpreadsheetWorkbookFn = typeof require !== 'undefined' ? require('./SheetIO').createSpreadsheetWorkbook : createSpreadsheetWorkbook;
-var seedModule = typeof require !== 'undefined' ? require('./CalendarSeed') : { seedRowToSheet: seedRowToSheet, SEED_HEADERS: SEED_HEADERS };
+var seedModule = typeof require !== 'undefined' ? require('./CalendarSeed') : {
+  seedRowToSheet: seedRowToSheet,
+  SEED_HEADERS: SEED_HEADERS,
+  normalizeSeedSheetRows: normalizeSeedSheetRows,
+  formatSeedImportToast: formatSeedImportToast,
+  createSeedInsertApi: createSeedInsertApi,
+  importSeedEvents: importSeedEvents
+};
+var ERROR_LOG_HEADERS = ['Timestamp', 'Job', 'Event ID', 'Project ID', 'Reason', 'Snippet'];
 var importProjectFn = typeof require !== 'undefined' ? require('./ImportProject').importProject : importProject;
 var createResourceRequestsFn = typeof require !== 'undefined' ? require('./CreateResourceRequests').createResourceRequests : createResourceRequests;
 
@@ -262,39 +270,52 @@ function runLiveCalendarGet(dryRun) {
   });
 }
 
+function calendarAppInsertSeed(calId, body) {
+  var cal = !calId || calId === 'primary'
+    ? CalendarApp.getDefaultCalendar()
+    : CalendarApp.getCalendarById(calId);
+  if (!cal) throw new Error('Cannot open calendar ' + calId);
+  var guests = (body.attendees || []).map(function (a) { return a.email; }).filter(Boolean).join(',');
+  var ev = cal.createEvent(body.summary, body.start, body.end, {
+    description: body.description,
+    guests: guests,
+    sendInvites: false
+  });
+  return { id: ev.getId() };
+}
+
 function importSeedCalendarEventsGas() {
   var wb = createGasWorkbook();
-  var rows = wb.readRows(Config.tabs.calendarSeed).map(function (r) {
-    return {
-      calendarTitle: r['Calendar Title'],
-      company: r['Company'],
-      meetingTitle: r['Meeting Title'],
-      milestone: r['Milestone'],
-      projectId: r['Project ID'],
-      start: new Date(r['Start']),
-      durationHours: Number(r['Duration hours']),
-      from: r['From'],
-      to: r['To'],
-      googleEventId: r['Google Event ID'] || ''
-    };
-  });
+  var rows = seedModule.normalizeSeedSheetRows(wb.readRows(Config.tabs.calendarSeed));
   var props = PropertiesService.getScriptProperties();
   var calIds = (props.getProperty('CALENDAR_IDS') || 'primary').split(',');
-  var api = {
-    insert: function (calId, body) {
-      var ev = Calendar.Events.insert({
-        summary: body.summary,
-        description: body.description,
-        start: { dateTime: body.start.toISOString() },
-        end: { dateTime: body.end.toISOString() },
-        attendees: body.attendees
-      }, calId);
-      return { id: ev.id };
-    }
-  };
-  var result = importSeedEvents(rows, api, calIds[0].trim());
+  var tz = (typeof Session !== 'undefined' && Session.getScriptTimeZone)
+    ? Session.getScriptTimeZone()
+    : 'Europe/London';
+  var api = seedModule.createSeedInsertApi({
+    timeZone: tz,
+    calendarEventsInsert: (typeof Calendar !== 'undefined' && Calendar.Events)
+      ? function (resource, calId) { return Calendar.Events.insert(resource, calId); }
+      : null,
+    calendarAppInsert: calendarAppInsertSeed
+  });
+  var result = seedModule.importSeedEvents(rows, api, calIds[0].trim());
   persistSeedGoogleEventIds(wb, rows);
-  SpreadsheetApp.getActiveSpreadsheet().toast('Created ' + result.created + ', skipped ' + result.skipped);
+  if (result.errors && result.errors.length) {
+    wb.ensureTab(Config.tabs.errorLog, ERROR_LOG_HEADERS);
+    result.errors.forEach(function (err) {
+      var row = rows[err.index] || {};
+      wb.writeRow(Config.tabs.errorLog, [
+        new Date().toISOString(),
+        'CalendarSeed',
+        '',
+        row.projectId || '',
+        err.message,
+        row.calendarTitle || ''
+      ]);
+    });
+  }
+  SpreadsheetApp.getActiveSpreadsheet().toast(seedModule.formatSeedImportToast(result, rows.length));
 }
 
 if (typeof module !== 'undefined') {

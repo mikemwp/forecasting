@@ -8,9 +8,13 @@
     "https://www.googleapis.com/auth/script.container.ui",
     "https://www.googleapis.com/auth/script.external_request"
   ],
-  "enabledAdvancedServices": [{
-    "userSymbol": "Calendar",
-    "serviceId": "calendar",
-    "version": "v3"
-  }]
+  "dependencies": {
+    "enabledAdvancedServices": [
+      {
+        "userSymbol": "Calendar",
+        "serviceId": "calendar",
+        "version": "v3"
+      }
+    ]
+  }
 }
