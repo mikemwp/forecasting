@@ -39,3 +39,11 @@ test('chooseClients with factory invokes factory when live mode', () => {
   expect(chooseClients(false, { kind: 'harness' }, factory).kind).toBe('live');
   expect(calls).toBe(1);
 });
+
+test('live factory throws if accidentally invoked under TEST_MODE path', () => {
+  var harness = { kind: 'harness' };
+  var liveFactory = function () {
+    throw new Error('live factory should not run');
+  };
+  expect(chooseClients(true, harness, liveFactory)).toBe(harness);
+});

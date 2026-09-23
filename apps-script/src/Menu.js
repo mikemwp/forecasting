@@ -67,9 +67,41 @@ function onCalendarGet(dryRun) {
   if (typeof dryRun !== 'boolean') dryRun = false;
   var testMode = getTestMode();
   if (!testMode) {
-    throw new Error('Live clients not installed');
+    var props = PropertiesService.getScriptProperties();
+    if (!props.getProperty('SMARTSHEET_TOKEN') || !props.getProperty('SF_ACCESS_TOKEN')) {
+      throw new Error('Set TEST_MODE false and Script Properties before live run');
+    }
+    runLiveCalendarGet(!!dryRun);
+    return;
   }
   runHarnessCalendarGet(!!dryRun);
+}
+
+function buildHarnessClients(wb, inspector, dryRun) {
+  return {
+    smartsheet: new HarnessSmartsheetClient({ workbook: wb, inspector: inspector, job: 'CalendarGET', dryRun: dryRun }),
+    salesforce: new HarnessSalesforceClient({ workbook: wb, inspector: inspector, job: 'CalendarGET', dryRun: dryRun })
+  };
+}
+
+function buildLiveClients(wb, inspector, dryRun) {
+  var props = PropertiesService.getScriptProperties();
+  return {
+    smartsheet: new LiveSmartsheetClient({
+      token: props.getProperty('SMARTSHEET_TOKEN'),
+      workspaceId: props.getProperty('SMARTSHEET_WORKSPACE_ID'),
+      inspector: inspector,
+      job: 'CalendarGET',
+      dryRun: dryRun
+    }),
+    salesforce: new LiveSalesforceClient({
+      accessToken: props.getProperty('SF_ACCESS_TOKEN'),
+      instanceUrl: props.getProperty('SF_INSTANCE_URL'),
+      inspector: inspector,
+      job: 'CalendarGET',
+      dryRun: dryRun
+    })
+  };
 }
 
 function onImportProject() {
@@ -109,6 +141,6 @@ if (typeof module !== 'undefined') {
     chooseClients: chooseClients,
     dailyTriggerAllowed: dailyTriggerAllowed,
     assertNoLiveFetch: assertNoLiveFetch,
-    getTestMode: getTestMode
+    getTestMode: getTestMode,
   };
 }

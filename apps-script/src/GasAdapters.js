@@ -168,6 +168,47 @@ function importDummyDataGas() {
   SpreadsheetApp.getActiveSpreadsheet().toast('Dummy harness data imported');
 }
 
+function runLiveCalendarGet(dryRun) {
+  var wb = createGasWorkbook();
+  var inspector = createInspector();
+  var props = PropertiesService.getScriptProperties();
+  var smartsheet = new LiveSmartsheetClient({
+    token: props.getProperty('SMARTSHEET_TOKEN'),
+    workspaceId: props.getProperty('SMARTSHEET_WORKSPACE_ID'),
+    inspector: inspector,
+    job: 'CalendarGET',
+    dryRun: dryRun
+  });
+  var salesforce = new LiveSalesforceClient({
+    accessToken: props.getProperty('SF_ACCESS_TOKEN'),
+    instanceUrl: props.getProperty('SF_INSTANCE_URL'),
+    inspector: inspector,
+    job: 'CalendarGET',
+    dryRun: dryRun
+  });
+  var errorLog = { append: function (e) { wb.writeRow(Config.tabs.errorLog, [e.timestamp, e.job, e.eventId, e.projectId, e.reason, e.snippet]); } };
+  var calIds = (props.getProperty('CALENDAR_IDS') || '').split(',').map(function (s) { return s.trim(); }).filter(Boolean);
+  var now = new Date();
+  var window = fetchWindow(now, Config.CALENDAR_HORIZON_DAYS, Config.TIMESHEET_WEEK_START);
+  var events = calIds.length ? fetchCalendarEvents(calIds, window.timeMin, window.timeMax) : [];
+  runCalendarGet({
+    now: now,
+    events: events,
+    companies: wb.getColumnValues(Config.tabs.companies, 'Company'),
+    milestones: wb.getColumnValues(Config.tabs.milestones, 'Milestone'),
+    resources: wb.readRows(Config.tabs.resourceEmails).map(function (r) {
+      return { email: r['Email'], name: r['Name'], certiniaId: r['Certinia Resource Id'] };
+    }),
+    smartsheet: smartsheet,
+    salesforce: salesforce,
+    inspector: inspector,
+    errorLog: errorLog,
+    dryRun: dryRun,
+    workbook: wb,
+    remainingMs: 300000
+  });
+}
+
 function importSeedCalendarEventsGas() {
   var wb = createGasWorkbook();
   var rows = wb.readRows(Config.tabs.calendarSeed).map(function (r) {
