@@ -132,12 +132,81 @@ function importSeedEvents(rows, calendarApi, calendarId) {
   return { created: created, skipped: skipped, errors: errors };
 }
 
+function normalizeSeedSheetRows(objects) {
+  var mapped = [];
+  for (var i = 0; i < objects.length; i++) {
+    var raw = objects[i] || {};
+    var r = {};
+    Object.keys(raw).forEach(function (k) {
+      r[String(k).trim()] = raw[k];
+    });
+    var title = String(r['Calendar Title'] || '').trim();
+    if (!title) continue;
+    mapped.push({
+      calendarTitle: title,
+      company: r['Company'],
+      meetingTitle: r['Meeting Title'],
+      milestone: r['Milestone'],
+      projectId: r['Project ID'],
+      start: r['Start'] instanceof Date ? r['Start'] : new Date(r['Start']),
+      durationHours: Number(r['Duration hours']),
+      from: r['From'],
+      to: r['To'],
+      googleEventId: r['Google Event ID'] || ''
+    });
+  }
+  return mapped;
+}
+
+function formatSeedImportToast(result, attempted) {
+  if (!attempted) {
+    return 'No seed rows on Harness_CalendarSeed. Run Test → Import dummy data.';
+  }
+  var msg = 'Created ' + result.created + ', skipped ' + result.skipped;
+  if (result.errors && result.errors.length) {
+    msg += ', failed ' + result.errors.length + ': ' + result.errors[0].message;
+  }
+  return msg;
+}
+
+function createSeedInsertApi(deps) {
+  deps = deps || {};
+  var tz = deps.timeZone || 'UTC';
+  return {
+    insert: function (calId, body) {
+      var lastErr;
+      if (typeof deps.calendarEventsInsert === 'function') {
+        try {
+          var resource = {
+            summary: body.summary,
+            description: body.description,
+            start: { dateTime: body.start.toISOString(), timeZone: tz },
+            end: { dateTime: body.end.toISOString(), timeZone: tz }
+          };
+          if (body.attendees && body.attendees.length) resource.attendees = body.attendees;
+          var ev = deps.calendarEventsInsert(resource, calId);
+          return { id: ev.id };
+        } catch (e) {
+          lastErr = e;
+        }
+      }
+      if (typeof deps.calendarAppInsert === 'function') {
+        return deps.calendarAppInsert(calId, body);
+      }
+      throw lastErr || new Error('Calendar advanced service is not enabled. Add Services → Calendar API.');
+    }
+  };
+}
+
 if (typeof module !== 'undefined') {
   module.exports = {
     defaultSeedRows: defaultSeedRows,
     buildCalendarInsert: buildCalendarInsert,
     importSeedEvents: importSeedEvents,
     seedRowToSheet: seedRowToSheet,
-    SEED_HEADERS: SEED_HEADERS
+    SEED_HEADERS: SEED_HEADERS,
+    normalizeSeedSheetRows: normalizeSeedSheetRows,
+    formatSeedImportToast: formatSeedImportToast,
+    createSeedInsertApi: createSeedInsertApi
   };
 }

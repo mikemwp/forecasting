@@ -1,4 +1,11 @@
-const { defaultSeedRows, buildCalendarInsert, importSeedEvents } = require('../src/CalendarSeed');
+const {
+  defaultSeedRows,
+  buildCalendarInsert,
+  importSeedEvents,
+  normalizeSeedSheetRows,
+  formatSeedImportToast,
+  createSeedInsertApi
+} = require('../src/CalendarSeed');
 
 test('defaultSeedRows is 10 future timed events with mike as from and to', () => {
   const now = new Date('2026-09-23T12:00:00+01:00');
@@ -56,6 +63,71 @@ test('edited From/To on the row are what get sent', () => {
   row.to = 'consultant@co.com';
   const payload = buildCalendarInsert(row);
   expect(payload.attendees[0].email).toBe('consultant@co.com');
+});
+
+test('importSeedEvents records insert failures without counting created or skipped', () => {
+  const api = {
+    insert: function () {
+      throw new Error('Calendar is not defined');
+    }
+  };
+  const rows = defaultSeedRows(new Date('2026-09-23T12:00:00Z')).slice(0, 2);
+  const result = importSeedEvents(rows, api, 'primary');
+  expect(result.created).toBe(0);
+  expect(result.skipped).toBe(0);
+  expect(result.errors).toHaveLength(2);
+  expect(result.errors[0].message).toMatch(/Calendar is not defined/);
+});
+
+test('normalizeSeedSheetRows skips blank titles and trims headers', () => {
+  const rows = normalizeSeedSheetRows([
+    { ' Calendar Title': 'Acme Kickoff', Company: 'Acme Ltd', 'Meeting Title': 'Kickoff workshop', Milestone: 'Kickoff', 'Project ID': 'P-DEMO', Start: '2026-09-24T09:00:00.000Z', 'Duration hours': 1, From: 'mikemwp@gmail.com', To: 'mikemwp@gmail.com', 'Google Event ID': '' },
+    { 'Calendar Title': '', Start: '2026-09-25T09:00:00.000Z' }
+  ]);
+  expect(rows).toHaveLength(1);
+  expect(rows[0].calendarTitle).toBe('Acme Kickoff');
+  expect(rows[0].start instanceof Date).toBe(true);
+});
+
+test('formatSeedImportToast explains empty seed tab vs swallowed insert errors', () => {
+  expect(formatSeedImportToast({ created: 0, skipped: 0, errors: [] }, 0)).toMatch(/No seed rows on Harness_CalendarSeed/);
+  expect(formatSeedImportToast({
+    created: 0,
+    skipped: 0,
+    errors: [{ index: 0, message: 'Calendar is not defined' }]
+  }, 10)).toBe('Created 0, skipped 0, failed 1: Calendar is not defined');
+});
+
+test('createSeedInsertApi falls back to CalendarApp when advanced Calendar insert fails', () => {
+  const advanced = {
+    insert: function () {
+      throw new Error('Calendar is not defined');
+    }
+  };
+  const fallback = {
+    calls: [],
+    insert: function (calId, body) {
+      this.calls.push({ calId: calId, summary: body.summary });
+      return { id: 'app_evt_1' };
+    }
+  };
+  const api = createSeedInsertApi({
+    timeZone: 'Europe/London',
+    calendarEventsInsert: function (resource, calId) {
+      expect(resource.start.timeZone).toBe('Europe/London');
+      expect(resource.end.timeZone).toBe('Europe/London');
+      return advanced.insert(resource, calId);
+    },
+    calendarAppInsert: function (calId, body) {
+      return fallback.insert(calId, body);
+    }
+  });
+  const row = defaultSeedRows(new Date('2026-09-23T12:00:00Z'))[0];
+  const result = importSeedEvents([row], api, 'primary');
+  expect(result.created).toBe(1);
+  expect(result.errors).toHaveLength(0);
+  expect(fallback.calls).toHaveLength(1);
+  expect(row.googleEventId).toBe('app_evt_1');
 });
 
 test('two Build meetings share the same weekStart Monday', () => {
